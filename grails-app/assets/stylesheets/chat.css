@@ -1,0 +1,14 @@
+.privatechatters {
+    border: 10px;
+    padding: 10px;
+}
+
+.publicchatters {
+    border: 10px;
+    padding: 10px;
+}
+
+#conversationDiv {
+    border: 10px;
+    padding: 10px;
+}
