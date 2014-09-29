@@ -50,3 +50,4 @@ test/system/build
 cobertura.ser
 grailsw
 grailsw.bat
+/wrapper
