@@ -11,6 +11,13 @@ class MessagingService {
     ChatterService chatterService
     def brokerMessagingTemplate
 
+    /**
+     * Register a new chat participant.  This'll create a record for the new
+     * chatter in the Chatters table.
+     *
+     * @param registrationMessage a chunk of JSON in the following format:
+     *     { name:<chatter name>, chatId:<chatter id> }
+     */
     @MessageMapping("/register")
     protected void register(String registrationMessage) {
 
@@ -29,6 +36,13 @@ class MessagingService {
         updateRegistrations()
     }
 
+    /**
+     * Unregister an existing chat participant.  This'll delete a chatter's
+     * record from the Chatters table.
+     *
+     * @param unregistrationMessage a chunk of JSON in the following format:
+     *     { chatId:<chatter id> }
+     */
     @MessageMapping("/unregister")
     protected void unregister(String unregistrationMessage) {
 
@@ -46,6 +60,9 @@ class MessagingService {
         updateRegistrations()
     }
 
+    /**
+     * Broadcast a list of all chat participants
+     */
     private void updateRegistrations() {
         Collection<Chatter> chatters = chatterService.getAllChatters()
 
@@ -59,25 +76,42 @@ class MessagingService {
         }
     }
 
+    /**
+     * Receive a public message and broadcast it to all participants
+     * listening on the /public channel
+     *
+     * @param jsonMessage will be a chunk of JSON in the following format:
+     *     { senderId: <sender's chat id>, message: <public chat message> }
+     */
     @MessageMapping("/public")
-    protected String publicMessage(String jsonMessage) {
+    protected void publicMessage(String jsonMessage) {
         Map messageMap = parseMessageToMap(jsonMessage)
         brokerMessagingTemplate.convertAndSend "/topic/public", messageMap
     }
 
+    /**
+     * Receive a private message and forward it on to the intended recipient's
+     * private channel.
+     *
+     * @param chatterId The chat id of the intended recipient of this message
+     * @param jsonMessage a chunk of JSON in the following format:
+     *     { senderId: <sender's chat id>, message: <private chat message> }
+     */
     @MessageMapping("/private/{chatterId}")
     protected void privateMessage(@DestinationVariable String chatterId, String jsonMessage) {
         Map messageMap = parseMessageToMap(jsonMessage)
         brokerMessagingTemplate.convertAndSend "/topic/private/$chatterId".toString(), messageMap
     }
 
-    // The incoming jsonMessage will be a chunk of JSON with two fields: senderId and message.
-    // The senderId will be a UUID representing the chat participant that sent the message
-    // while the message will be the actual message string being sent.  It might look a little
-    // something like this:
-    //
-    // { "senderId": "1276f4bc-a625-47cf-8aa5-3c6595ca4dea", "message": "Hey, how you doin?" }
-    //
+    /**
+     * Parse an incoming chat message to get senderId and message, lookup
+     * the sender's name in the Chatter table, stuff the sender's name
+     * and the chat message into a map and return it.
+     *
+     * @param jsonMessage An incoming chat message.
+     *
+     * @return A map containing the sender's name and the chat message.
+     */
     private static Map parseMessageToMap(String jsonMessage) {
         JsonSlurper slurper = new JsonSlurper()
         def json = slurper.parseText(jsonMessage)

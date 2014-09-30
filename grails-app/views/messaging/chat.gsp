@@ -46,8 +46,10 @@
 
                 // Listen for registration updates
                 registrationSubscription = client.subscribe("/topic/registrations", function(message) {
+                    var chatters = $("#chatters");
+
                     // Empty the chatters select field
-                    $("#chatters").empty();
+                    chatters.empty();
 
                     // TODO: Figure out why this is double encoded.
                     var obj = $.parseJSON( $.parseJSON(message.body) );
@@ -55,7 +57,7 @@
                     // Populate the select list with all available chatters
                     $.each(obj.chatters, function(index, value) {
                         var option = $('<option></option>').attr("value", value.chatId).text(value.name);
-                        $("#chatters").append(option);
+                        chatters.append(option);
                     });
                 });
             });
@@ -79,6 +81,7 @@
                 client.send("/app/public", {}, JSON.stringify(json));
             });
 
+            // Exit neatly on window unload
             $(window).on('beforeunload', function(){
                 privateSubscription.unsubscribe();
                 publicSubscription.unsubscribe();
@@ -146,7 +149,6 @@
     <div class="boxed">
         <div id="conversationDiv"></div>
     </div>
-
 
 </body>
 </html>
