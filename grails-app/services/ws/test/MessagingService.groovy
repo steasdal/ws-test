@@ -18,7 +18,7 @@ class MessagingService {
         def json = slurper.parseText(registrationMessage)
 
         def name = json.name
-        def chatId = json.sessionId
+        def chatId = json.chatId
 
         try {
             Chatter chatter = chatterService.newChatter(name, chatId)
@@ -35,7 +35,7 @@ class MessagingService {
         JsonSlurper slurper = new JsonSlurper()
         def json = slurper.parseText(unregistrationMessage)
 
-        def chatId = json.sessionId
+        def chatId = json.chatId
 
         try {
             chatterService.deleteChatter(chatId)

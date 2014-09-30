@@ -10,7 +10,7 @@
 
     <script type="text/javascript">
         $(function() {
-            var sessionId = $("#sessionId").val();
+            var chatId = $("#chatId").val();
             var name = $("#name").val();
 
             var socket = new SockJS("${createLink(uri: '/stomp')}");
@@ -23,15 +23,16 @@
             client.connect({}, function() {
 
                 // Register the existence of this new chat client with the server
-                var json = "{\"name\":\"" + name + "\", \"sessionId\":\"" + sessionId + "\"}";
+                var json = "{\"name\":\"" + name + "\", \"chatId\":\"" + chatId + "\"}";
                 client.send("/app/register", {}, JSON.stringify(json));
 
                 // Subscribe to my own private channel at /topic/private/<chatId>
-                privateSubscription = client.subscribe("/topic/private/" + sessionId, function(message) {
+                privateSubscription = client.subscribe("/topic/private/" + chatId, function(message) {
                     var messageBody = JSON.parse(message.body);
 
                     var newMessage = "Private message from " + messageBody.name + ": <b>" + messageBody.message + "</b><br/>";
                     $("#conversationDiv").append(newMessage);
+                    scrollToBottom();
                 });
 
                 // Subscribe to the public channel at /topic/public
@@ -40,6 +41,7 @@
 
                     var newMessage = "Public message from " + messageBody.name + ": <b>" + messageBody.message + "</b><br/>";
                     $("#conversationDiv").append(newMessage);
+                    scrollToBottom();
                 });
 
                 // Listen for registration updates
@@ -62,16 +64,16 @@
                 var selectedChatterId = $("#chatters").val();
                 var privateMessage = $("#privatemessage").val();
 
-                var json = "{ \"senderId\": \"" + sessionId +  "\", \"message\": \"" + privateMessage + "\" }";
+                var json = "{ \"senderId\": \"" + chatId +  "\", \"message\": \"" + privateMessage + "\" }";
 
-                // Send the private message to /app/private/{id}<id>
+                // Send the private message to /app/private/{id}
                 client.send("/app/private/" + selectedChatterId, {}, JSON.stringify(json));
             });
 
             $("#publicSendButton").click(function() {
                 var publicMessage = $("#publicmessage").val();
 
-                var json = "{ \"senderId\": \"" + sessionId +  "\", \"message\": \"" + publicMessage + "\" }";
+                var json = "{ \"senderId\": \"" + chatId +  "\", \"message\": \"" + publicMessage + "\" }";
 
                 // Send the public message to /app/public
                 client.send("/app/public", {}, JSON.stringify(json));
@@ -83,11 +85,11 @@
                 registrationSubscription.unsubscribe();
 
                 // Tell all chat participants that we're leaving
-                var json = "{ \"senderId\": \"" + sessionId +  "\", \"message\": \"-- leaving the chat --\" }";
+                var json = "{ \"senderId\": \"" + chatId +  "\", \"message\": \"-- leaving the chat --\" }";
                 client.send("/app/public", {}, JSON.stringify(json));
 
                 // Delete this chatter from the Chatter table
-                json = "{ \"sessionId\": \"" + sessionId + "\" }";
+                json = "{ \"chatId\": \"" + chatId + "\" }";
                 client.send("/app/unregister", {}, JSON.stringify(json));
 
                 // Disconnect the websocket connection
@@ -97,6 +99,13 @@
             // ******* debug messages to the console, please ********
             client.debug = function(str) {
                 console.log(str);
+            }
+
+            // This function will keep the conversationDiv
+            // scrolled to the bottom as text is added.
+            var scrollToBottom = function() {
+                var convoDiv = $("#conversationDiv");
+                convoDiv.scrollTop(convoDiv[0].scrollHeight);
             }
         });
     </script>
@@ -110,12 +119,14 @@
 
     <br/>
 
-    <g:hiddenField name="sessionId" value="${sessionId}" />
+    <g:hiddenField name="chatId" value="${chatId}" />
     <g:hiddenField name="name" value="${name}" />
 
-    <h3>Welcome ${name}</h3>
+    <div class="boxed">
+        <h3>Welcome ${name}</h3>
+    </div>
 
-    <div class="privatechatters" >
+    <div class="boxed" >
         <label for="privatemessage">Send Private Message</label>
         <input type="text" id= "privatemessage" name="privatemessage">
 
@@ -125,15 +136,17 @@
         <button id="privateSendButton">Send</button>
     </div>
 
-    <div class="publicchatters" >
-
+    <div class="boxed" >
         <label for="publicmessage">Send Public Message</label>
         <input type="text" id="publicmessage" name="publicmessage">
 
         <button id="publicSendButton">Send</button>
     </div>
 
-    <div id="conversationDiv"></div>
+    <div class="boxed">
+        <div id="conversationDiv"></div>
+    </div>
+
 
 </body>
 </html>
