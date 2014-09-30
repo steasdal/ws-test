@@ -9,4 +9,8 @@ class MessagingController {
     def chat() {
         [chatId:params.chatId, name:params.name]
     }
+
+    def mirror() {
+        // nothing to pass through
+    }
 }

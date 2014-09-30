@@ -16,15 +16,31 @@
             var socket = new SockJS("${createLink(uri: '/stomp')}");
             var client = Stomp.over(socket);
 
-            var privateSubscription;
-            var publicSubscription;
-            var registrationSubscription;
+            var privateSubscription, publicSubscription, registrationSubscription;
+
+            var localVideo = $("#localVideo")[0];
+            var remoteVideo = $("remoteVideo")[0];
+
+            var chatButton = $("#rtcChatButton");
+            var hangupButton = $("#rtcHangupButton");
+
+            var localStream, remoteStream, rtcPeerConnection;
+            var rtcSessionDescriptionSubscription, rtcIceCandidateSubscription;
 
             client.connect({}, function() {
 
                 // Register the existence of this new chat client with the server
                 var json = "{\"name\":\"" + name + "\", \"chatId\":\"" + chatId + "\"}";
                 client.send("/app/register", {}, JSON.stringify(json));
+
+                // Subscribe to the public channel at /topic/public
+                publicSubscription = client.subscribe("/topic/public", function(message) {
+                    var messageBody = JSON.parse(message.body);
+
+                    var newMessage = "Public message from " + messageBody.name + ": <b>" + messageBody.message + "</b><br/>";
+                    $("#conversationDiv").append(newMessage);
+                    scrollToBottom();
+                });
 
                 // Subscribe to my own private channel at /topic/private/<chatId>
                 privateSubscription = client.subscribe("/topic/private/" + chatId, function(message) {
@@ -35,13 +51,36 @@
                     scrollToBottom();
                 });
 
-                // Subscribe to the public channel at /topic/public
-                publicSubscription = client.subscribe("/topic/public", function(message) {
+                rtcSessionDescriptionSubscription = client.subscribe("/topic/rtcSessionDescription/" + chatId, function(message) {
                     var messageBody = JSON.parse(message.body);
 
-                    var newMessage = "Public message from " + messageBody.name + ": <b>" + messageBody.message + "</b><br/>";
-                    $("#conversationDiv").append(newMessage);
-                    scrollToBottom();
+                    console.log("Session Description Received!");
+                    console.log(messageBody);
+
+                    var sdp = messageBody.sdp;
+                    var senderId = messageBody.senderId;
+
+                    if(!rtcPeerConnection) {
+                        startRtc(false, senderId);
+                    }
+
+                    rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+                });
+
+                rtcIceCandidateSubscription = client.subscribe("/topic/rtcIceCandidate/" + chatId, function(message) {
+                    var messageBody = JSON.parse(message.body);
+
+                    console.log("ICE Candidate Received!");
+                    console.log(messageBody);
+
+                    var candidate = messageBody.candidate;
+                    var senderId = messageBody.senderId;
+
+                    if(!rtcPeerConnection) {
+                        startRtc(false, senderId);
+                    }
+
+                    rtcPeerConnection.addIceCandidate(new RTCIceCandidate(candidate));
                 });
 
                 // Listen for registration updates
@@ -102,14 +141,101 @@
             // ******* debug messages to the console, please ********
             client.debug = function(str) {
                 console.log(str);
-            }
+            };
 
             // This function will keep the conversationDiv
             // scrolled to the bottom as text is added.
             var scrollToBottom = function() {
                 var convoDiv = $("#conversationDiv");
                 convoDiv.scrollTop(convoDiv[0].scrollHeight);
-            }
+            };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            chatButton.click(function() {
+                var selectedChatterId = $("#chatters").val();
+
+                if(selectedChatterId === chatId) {
+                    alert("You can't video chat with yourself, silly!");
+                    return;
+                }
+
+                startRtc(true, selectedChatterId);
+
+                chatButton.prop('disabled', true);
+                hangupButton.prop('disabled', false);
+
+
+            });
+
+            var startRtc = function(isCaller, targetChatter) {
+
+                rtcPeerConnection = new webkitRTCPeerConnection(null);
+
+                rtcPeerConnection.onicecandidate = function(evt) {
+                    client.send("/rtcIceCandidate/" + targetChatter, {}, JSON.stringify({ "candidate": evt.candidate, "senderId": chatId }));
+                };
+
+                rtcPeerConnection.onaddstream = function(evt) {
+                    remoteVideo.src = URL.createObjectUrl(evt.stream);
+                    remoteStream = evt.stream;
+                };
+
+                navigator.getUserMedia =
+                        navigator.getUserMedia ||
+                        navigator.webkitGetUserMedia ||
+                        navigator.mozGetUserMedia;
+
+                navigator.getUserMedia(
+                        {audio:true, video:true},
+
+                        function(stream) {
+                            localVideo.src = URL.createObjectURL(stream);
+                            rtcPeerConnection.addStream(stream);
+                            localStream = stream;
+
+                            if(isCaller) {
+                                rtcPeerConnection.createOffer(gotDescription);
+                            } else {
+                                rtcPeerConnection.createAnswer(rtcPeerConnection.remoteDescription, gotDescription);
+                            }
+
+                            function gotDescription(desc) {
+                                rtcPeerConnection.setLocalDescription(desc);
+                                client.send("/rtcSessionDescription/" + targetChatter, {}, JSON.stringify({ "sdp": desc, "senderId": chatId }));
+                            }
+                        },
+
+                        function(error) {
+                            trace("navigator.getUserMedia error: ", error);
+                        }
+                );
+            };
+
+
+
+
+
+
+
+
+
+
+
+
+
         });
     </script>
 </head>
@@ -126,7 +252,7 @@
     <g:hiddenField name="name" value="${name}" />
 
     <div class="boxed">
-        <h3>Welcome ${name}</h3>
+        <h3>Welcome ${name}!  Your Chat ID is ${chatId}</h3>
     </div>
 
     <div class="boxed" >
@@ -137,6 +263,8 @@
         <select name="chatters" id="chatters"></select>
 
         <button id="privateSendButton">Send</button>
+        <button id="rtcChatButton">Video Chat</button>
+        <button id="rtcHangupButton" disabled>Hang Up</button>
     </div>
 
     <div class="boxed" >
@@ -148,6 +276,11 @@
 
     <div class="boxed">
         <div id="conversationDiv"></div>
+    </div>
+
+    <div class="boxed" >
+        <video id="localVideo" class="videoWindow" autoplay></video>
+        <video id="remoteVideo" class="videoWindow" autoplay></video>
     </div>
 
 </body>

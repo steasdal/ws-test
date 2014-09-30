@@ -125,4 +125,76 @@ class MessagingService {
         // Wrangle the sender name and message into a map
         return [name: senderName, message: message]
     }
+
+    /**
+     * Forward a WebRtc session description to a particular chatter
+     * @param chatterId
+     * @param jsonMessage
+     */
+    @MessageMapping("/rtcSessionDescription/{chatterId}")
+    protected void brokerRtcSessionDescription(@DestinationVariable String chatterId, String jsonMessage) {
+
+        System.out.println("Brokering Session Description Message!")
+
+        brokerMessagingTemplate.convertAndSend "/topic/rtcSessionDescription/$chatterId".toString(), jsonMessage
+    }
+
+    /**
+     * Forward a WebRtc Ice client update to a particular chatter
+     * @param chatterId
+     * @param jsonMessage
+     */
+    @MessageMapping("/rtcIceCandidate/{chatterId}")
+    protected void brokerRtcIceCandidate(@DestinationVariable String chatterId, String jsonMessage) {
+
+        System.out.println("Brokering Ice Candidate Message!")
+
+        brokerMessagingTemplate.convertAndSend "/topic/rtcIceCandidate/$chatterId".toString(), jsonMessage
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 }
