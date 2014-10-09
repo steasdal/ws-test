@@ -1,15 +1,18 @@
 package ws.test
 
 import groovy.json.JsonSlurper
+import org.springframework.messaging.Message
 import org.springframework.messaging.handler.annotation.DestinationVariable
 import org.springframework.messaging.handler.annotation.MessageMapping
+import org.springframework.messaging.simp.SimpMessagingTemplate
+import org.springframework.messaging.support.MessageBuilder
 import org.springframework.stereotype.Controller
 
 @Controller
 class MessagingService {
 
     ChatterService chatterService
-    def brokerMessagingTemplate
+    SimpMessagingTemplate brokerMessagingTemplate
 
     /**
      * Register a new chat participant.  This'll create a record for the new
@@ -72,7 +75,10 @@ class MessagingService {
             returnText.append( chatters.collect{ /{ "name":"${it.name}", "chatId":"${it.chatId}" }/ }.join(",") )
             returnText.append( / ] }/ )
 
-            brokerMessagingTemplate.convertAndSend "/topic/registrations", returnText.toString()
+            String destination = "/topic/registrations"
+            Message<byte[]> outgoingMessage = MessageBuilder.withPayload(returnText.toString().getBytes()).build()
+
+            brokerMessagingTemplate.send destination, outgoingMessage
         }
     }
 
@@ -127,74 +133,14 @@ class MessagingService {
     }
 
     /**
-     * Forward a WebRtc session description to a particular chatter
+     * Forward a WebRtc message to a particular chatter
      * @param chatterId
-     * @param jsonMessage
+     * @param incomingMessage
      */
-    @MessageMapping("/rtcSessionDescription/{chatterId}")
-    protected void brokerRtcSessionDescription(@DestinationVariable String chatterId, String jsonMessage) {
-
-        System.out.println("Brokering Session Description Message!")
-
-        brokerMessagingTemplate.convertAndSend "/topic/rtcSessionDescription/$chatterId".toString(), jsonMessage
+    @MessageMapping("/rtcMessage/{chatterId}")
+    protected void rtcMessage(@DestinationVariable String chatterId, String incomingMessage) {
+        String destination = "/topic/rtcMessage/$chatterId"
+        Message<byte[]> outgoingMessage = MessageBuilder.withPayload(incomingMessage.getBytes()).build()
+        brokerMessagingTemplate.send destination, outgoingMessage
     }
-
-    /**
-     * Forward a WebRtc Ice client update to a particular chatter
-     * @param chatterId
-     * @param jsonMessage
-     */
-    @MessageMapping("/rtcIceCandidate/{chatterId}")
-    protected void brokerRtcIceCandidate(@DestinationVariable String chatterId, String jsonMessage) {
-
-        System.out.println("Brokering Ice Candidate Message!")
-
-        brokerMessagingTemplate.convertAndSend "/topic/rtcIceCandidate/$chatterId".toString(), jsonMessage
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 }

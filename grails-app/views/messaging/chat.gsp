@@ -6,12 +6,15 @@
 
     <asset:javascript src="jquery" />
     <asset:javascript src="spring-websocket" />
+    <asset:javascript src="adapter.js" />
     <asset:stylesheet href="chat.css"/>
 
     <script type="text/javascript">
         $(function() {
             var chatId = $("#chatId").val();
             var name = $("#name").val();
+
+            var convoDiv = $("#conversationDiv");
 
             var socket = new SockJS("${createLink(uri: '/stomp')}");
             var client = Stomp.over(socket);
@@ -24,8 +27,9 @@
             var chatButton = $("#rtcChatButton");
             var hangupButton = $("#rtcHangupButton");
 
-            var localStream, remoteStream, rtcPeerConnection;
-            var rtcSessionDescriptionSubscription, rtcIceCandidateSubscription;
+            var rtcMessageSubscription;
+
+            var remoteChatter = undefined;
 
             client.connect({}, function() {
 
@@ -38,7 +42,7 @@
                     var messageBody = JSON.parse(message.body);
 
                     var newMessage = "Public message from " + messageBody.name + ": <b>" + messageBody.message + "</b><br/>";
-                    $("#conversationDiv").append(newMessage);
+                    convoDiv.append(newMessage);
                     scrollToBottom();
                 });
 
@@ -47,40 +51,8 @@
                     var messageBody = JSON.parse(message.body);
 
                     var newMessage = "Private message from " + messageBody.name + ": <b>" + messageBody.message + "</b><br/>";
-                    $("#conversationDiv").append(newMessage);
+                    convoDiv.append(newMessage);
                     scrollToBottom();
-                });
-
-                rtcSessionDescriptionSubscription = client.subscribe("/topic/rtcSessionDescription/" + chatId, function(message) {
-                    var messageBody = JSON.parse(message.body);
-
-                    console.log("Session Description Received!");
-                    console.log(messageBody);
-
-                    var sdp = messageBody.sdp;
-                    var senderId = messageBody.senderId;
-
-                    if(!rtcPeerConnection) {
-                        startRtc(false, senderId);
-                    }
-
-                    rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
-                });
-
-                rtcIceCandidateSubscription = client.subscribe("/topic/rtcIceCandidate/" + chatId, function(message) {
-                    var messageBody = JSON.parse(message.body);
-
-                    console.log("ICE Candidate Received!");
-                    console.log(messageBody);
-
-                    var candidate = messageBody.candidate;
-                    var senderId = messageBody.senderId;
-
-                    if(!rtcPeerConnection) {
-                        startRtc(false, senderId);
-                    }
-
-                    rtcPeerConnection.addIceCandidate(new RTCIceCandidate(candidate));
                 });
 
                 // Listen for registration updates
@@ -90,8 +62,7 @@
                     // Empty the chatters select field
                     chatters.empty();
 
-                    // TODO: Figure out why this is double encoded.
-                    var obj = $.parseJSON( $.parseJSON(message.body) );
+                    var obj = JSON.parse(message.body);
 
                     // Populate the select list with all available chatters
                     $.each(obj.chatters, function(index, value) {
@@ -99,7 +70,132 @@
                         chatters.append(option);
                     });
                 });
+
+                rtcMessageSubscription = client.subscribe("/topic/rtcMessage/" + chatId, function(rawMessage) {
+                    var messageBody = JSON.parse(rawMessage.body);
+
+                    console.log("message type: " + messageBody.type);
+                    console.log("message sender: " + messageBody.sender);
+
+                    switch(messageBody.type) {
+                        case "chat-offer":               // A chat offer has been received from some chat participant - prepare to chat!
+                            remoteChatter = messageBody.sender;
+                            acknowledgeChatInvitation();
+                            prepareForVideoChat();
+                            console.log("Remote chatting with " + remoteChatter);
+                            break;
+                        case "chat-acknowledged":        // You've sent a chat offer and the remote participant has acknowledged - prepare to chat!
+                            if( messageBody.sender === remoteChatter ) {
+                                console.log("Chat acknowledged by " + remoteChatter);
+                                prepareForVideoChat();
+                            } else {
+                                console.log("Chat acknowledgement expected by " + remoteChatter + " but received by " + messageBody.sender);
+                            }
+                            break;
+                        case "disconnect-offer":         // You've received a disconnect offer from your chat participant - prepare to disconnect
+                            acknowledgeChatHangup();
+                            cleanupAfterVideoChat();
+                            remoteChatter = undefined;
+                            console.log("Disconnecting from chat with " + messageBody.sender);
+                            break;
+                        case "disconnect-acknowledged":  // You've sent a disconnect offer to your chat participant and received this acknowledgement - disconnect complete
+                            cleanupAfterVideoChat();
+                            console.log("Disconnected from chat with " + messageBody.sender);
+                            break;
+                        default:
+                            console.log("Unknown message type: ", messageBody.type);
+                    }
+
+
+                });
             });
+
+            /*************************************************************************************/
+
+            function sendMessage(chatterId, message){
+                console.log('Sending message to ' + chatterId + ': ', message);
+                client.send("/app/rtcMessage/" + chatterId, {}, JSON.stringify(message));
+            }
+
+            function sendChatInvitation() {
+                var json = "{ \"type\":\"chat-offer\", \"sender\":\"" + chatId + "\" }";
+                sendMessage(remoteChatter, json);
+            }
+
+            function acknowledgeChatInvitation() {
+                var json = "{ \"type\":\"chat-acknowledged\", \"sender\":\"" + chatId + "\" }";
+                sendMessage(remoteChatter, json);
+            }
+
+            function sendChatHangup() {
+                var json = "{ \"type\":\"disconnect-offer\", \"sender\":\"" + chatId + "\" }";
+                sendMessage(remoteChatter, json);
+            }
+
+            function acknowledgeChatHangup() {
+                var json = "{ \"type\":\"disconnect-acknowledged\", \"sender\":\"" + chatId + "\" }";
+                sendMessage(remoteChatter, json);
+            }
+
+            function prepareForVideoChat() {
+                chatButton.prop('disabled', true);
+                hangupButton.prop('disabled', false);
+            }
+
+            function cleanupAfterVideoChat() {
+                chatButton.prop('disabled', false);
+                hangupButton.prop('disabled', true);
+            }
+
+
+
+
+
+
+
+
+
+
+            chatButton.click(function() {
+                var selectedChatterId = $("#chatters").val();
+
+                if(selectedChatterId === chatId) {
+                    alert("You can't video chat with yourself, silly!");
+                    return;
+                }
+
+                remoteChatter = selectedChatterId;
+                sendChatInvitation();
+            });
+
+            hangupButton.click(function() {
+                sendChatHangup();
+                remoteChatter = undefined;
+            });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
             $("#privateSendButton").click(function() {
                 var selectedChatterId = $("#chatters").val();
@@ -146,96 +242,8 @@
             // This function will keep the conversationDiv
             // scrolled to the bottom as text is added.
             var scrollToBottom = function() {
-                var convoDiv = $("#conversationDiv");
                 convoDiv.scrollTop(convoDiv[0].scrollHeight);
             };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            chatButton.click(function() {
-                var selectedChatterId = $("#chatters").val();
-
-                if(selectedChatterId === chatId) {
-                    alert("You can't video chat with yourself, silly!");
-                    return;
-                }
-
-                startRtc(true, selectedChatterId);
-
-                chatButton.prop('disabled', true);
-                hangupButton.prop('disabled', false);
-
-
-            });
-
-            var startRtc = function(isCaller, targetChatter) {
-
-                rtcPeerConnection = new webkitRTCPeerConnection(null);
-
-                rtcPeerConnection.onicecandidate = function(evt) {
-                    client.send("/rtcIceCandidate/" + targetChatter, {}, JSON.stringify({ "candidate": evt.candidate, "senderId": chatId }));
-                };
-
-                rtcPeerConnection.onaddstream = function(evt) {
-                    remoteVideo.src = URL.createObjectUrl(evt.stream);
-                    remoteStream = evt.stream;
-                };
-
-                navigator.getUserMedia =
-                        navigator.getUserMedia ||
-                        navigator.webkitGetUserMedia ||
-                        navigator.mozGetUserMedia;
-
-                navigator.getUserMedia(
-                        {audio:true, video:true},
-
-                        function(stream) {
-                            localVideo.src = URL.createObjectURL(stream);
-                            rtcPeerConnection.addStream(stream);
-                            localStream = stream;
-
-                            if(isCaller) {
-                                rtcPeerConnection.createOffer(gotDescription);
-                            } else {
-                                rtcPeerConnection.createAnswer(rtcPeerConnection.remoteDescription, gotDescription);
-                            }
-
-                            function gotDescription(desc) {
-                                rtcPeerConnection.setLocalDescription(desc);
-                                client.send("/rtcSessionDescription/" + targetChatter, {}, JSON.stringify({ "sdp": desc, "senderId": chatId }));
-                            }
-                        },
-
-                        function(error) {
-                            trace("navigator.getUserMedia error: ", error);
-                        }
-                );
-            };
-
-
-
-
-
-
-
-
-
-
-
-
-
         });
     </script>
 </head>
