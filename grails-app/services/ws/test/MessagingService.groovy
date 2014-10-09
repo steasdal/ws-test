@@ -134,13 +134,15 @@ class MessagingService {
 
     /**
      * Forward a WebRtc message to a particular chatter
-     * @param chatterId
-     * @param incomingMessage
+     * @param chatterId The ID of the message's intended recipient
+     * @param message The message to forward to the intended recipient
      */
     @MessageMapping("/rtcMessage/{chatterId}")
-    protected void rtcMessage(@DestinationVariable String chatterId, String incomingMessage) {
+    protected void rtcMessage(@DestinationVariable String chatterId, Message message) {
+
+        System.out.println("Brokering RTC Message")
+
         String destination = "/topic/rtcMessage/$chatterId"
-        Message<byte[]> outgoingMessage = MessageBuilder.withPayload(incomingMessage.getBytes()).build()
-        brokerMessagingTemplate.send destination, outgoingMessage
+        brokerMessagingTemplate.send destination, message
     }
 }

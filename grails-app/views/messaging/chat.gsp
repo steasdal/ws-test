@@ -22,11 +22,14 @@
             var privateSubscription, publicSubscription, registrationSubscription;
 
             var localVideo = $("#localVideo")[0];
-            var remoteVideo = $("remoteVideo")[0];
+            var remoteVideo = $("#remoteVideo")[0];
 
             var chatButton = $("#rtcChatButton");
             var hangupButton = $("#rtcHangupButton");
 
+            var localStream, remoteStream, rtcPeerConnection;
+            var isInitiator = false;
+            var isStarted = false;
             var rtcMessageSubscription;
 
             var remoteChatter = undefined;
@@ -75,19 +78,20 @@
                     var messageBody = JSON.parse(rawMessage.body);
 
                     console.log("message type: " + messageBody.type);
-                    console.log("message sender: " + messageBody.sender);
 
                     switch(messageBody.type) {
                         case "chat-offer":               // A chat offer has been received from some chat participant - prepare to chat!
                             remoteChatter = messageBody.sender;
                             acknowledgeChatInvitation();
                             prepareForVideoChat();
+                            startChat();
                             console.log("Remote chatting with " + remoteChatter);
                             break;
                         case "chat-acknowledged":        // You've sent a chat offer and the remote participant has acknowledged - prepare to chat!
                             if( messageBody.sender === remoteChatter ) {
                                 console.log("Chat acknowledged by " + remoteChatter);
                                 prepareForVideoChat();
+                                startChat();
                             } else {
                                 console.log("Chat acknowledgement expected by " + remoteChatter + " but received by " + messageBody.sender);
                             }
@@ -102,39 +106,61 @@
                             cleanupAfterVideoChat();
                             console.log("Disconnected from chat with " + messageBody.sender);
                             break;
+
+
+                        case "offer":
+                            console.log("offer received");
+                            rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(messageBody));
+                            doAnswer();
+                            break;
+
+                        case "answer":
+                            console.log("answer received");
+                            rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(messageBody));
+                            break;
+
+                        case "candidate":
+                            console.log("ice candidate received");
+                            var candidate = new RTCIceCandidate({sdpMLineIndex:messageBody.label, candidate:messageBody.candidate});
+                            rtcPeerConnection.addIceCandidate(candidate);
+                            break;
+
+
                         default:
                             console.log("Unknown message type: ", messageBody.type);
                     }
 
 
                 });
+
+                startLocalVideo();
             });
 
             /*************************************************************************************/
 
-            function sendMessage(chatterId, message){
-                console.log('Sending message to ' + chatterId + ': ', message);
-                client.send("/app/rtcMessage/" + chatterId, {}, JSON.stringify(message));
+            function sendMessage(message){
+                console.log('Sending message to ' + remoteChatter + ': ', message);
+                client.send("/app/rtcMessage/" + remoteChatter, {}, JSON.stringify(message));
             }
 
             function sendChatInvitation() {
-                var json = "{ \"type\":\"chat-offer\", \"sender\":\"" + chatId + "\" }";
-                sendMessage(remoteChatter, json);
+                var json = {type:'chat-offer', sender:chatId};
+                sendMessage(json);
             }
 
             function acknowledgeChatInvitation() {
-                var json = "{ \"type\":\"chat-acknowledged\", \"sender\":\"" + chatId + "\" }";
-                sendMessage(remoteChatter, json);
+                var json = {type:'chat-acknowledged', sender:chatId};
+                sendMessage(json);
             }
 
             function sendChatHangup() {
-                var json = "{ \"type\":\"disconnect-offer\", \"sender\":\"" + chatId + "\" }";
-                sendMessage(remoteChatter, json);
+                var json = {type:'disconnect-offer', sender:chatId};
+                sendMessage(json);
             }
 
             function acknowledgeChatHangup() {
-                var json = "{ \"type\":\"disconnect-acknowledged\", \"sender\":\"" + chatId + "\" }";
-                sendMessage(remoteChatter, json);
+                var json = {type:'disconnect-acknowledged', sender:chatId};
+                sendMessage(json);
             }
 
             function prepareForVideoChat() {
@@ -145,16 +171,99 @@
             function cleanupAfterVideoChat() {
                 chatButton.prop('disabled', false);
                 hangupButton.prop('disabled', true);
+                isInitiator = false;
             }
 
+            /*************************************************************************************/
 
+            function handleUserMedia(stream) {
+                localStream = stream;
+                attachMediaStream(localVideo, stream);
+                console.log('Adding local stream.');
+            }
 
+            function handleUserMediaError(error){
+                console.log('navigator.getUserMedia error: ', error);
+            }
 
+            var constraints = {video: true};
 
+            function startLocalVideo() {
+                console.log('Getting user media with constraints', constraints);
+                getUserMedia(constraints, handleUserMedia, handleUserMediaError);
+            }
 
+            function startChat() {
+                console.log( isStarted ? "started" : "not started" );
+                console.log( localStream ? "stream good" : "stream bad" );
 
+                if (!isStarted && localStream) {
+                    createPeerConnection();
+                    rtcPeerConnection.addStream(localStream);
+                    isStarted = true;
+                    if (isInitiator) {
+                        doCall();
+                    }
+                }
+            }
 
+            function createPeerConnection() {
+                try {
+                    rtcPeerConnection = new RTCPeerConnection(null);
+                    rtcPeerConnection.onicecandidate = handleIceCandidate;
+                    console.log('Created RTCPeerConnnection');
+                } catch (e) {
+                    console.log('Failed to create PeerConnection, exception: ' + e.message);
+                    alert('Cannot create RTCPeerConnection object.');
+                    return;
+                }
+                rtcPeerConnection.onaddstream = handleRemoteStreamAdded;
+                rtcPeerConnection.onremovestream = handleRemoteStreamRemoved;
+            }
 
+            function doCall() {
+                console.log('Sending offer to peer');
+                rtcPeerConnection.createOffer(setLocalAndSendMessage, null);
+            }
+
+            function doAnswer() {
+                console.log('Sending answer to peer.');
+                rtcPeerConnection.createAnswer(setLocalAndSendMessage, null);
+            }
+
+            function setLocalAndSendMessage(sessionDescription) {
+                rtcPeerConnection.setLocalDescription(sessionDescription);
+                sendMessage(sessionDescription)
+            }
+
+            function handleRemoteStreamAdded(event) {
+                console.log( event.stream ? "Remote stream NOT added" : "Remote stream added" );
+                console.log(event);
+
+                attachMediaStream(remoteVideo, event.stream);
+                remoteStream = event.stream;
+            }
+            function handleRemoteStreamRemoved(event) {
+                console.log('Remote stream removed. Event: ', event);
+            }
+
+            function handleIceCandidate(event) {
+                console.log('handleIceCandidate event: ', event);
+                if (event.candidate) {
+                    var messageMap = {
+                        type: 'candidate',
+                        label: event.candidate.sdpMLineIndex,
+                        id: event.candidate.sdpMid,
+                        candidate: event.candidate.candidate
+                    };
+
+                    sendMessage(messageMap);
+                } else {
+                    console.log('End of candidates.');
+                }
+            }
+
+            /*************************************************************************************/
 
             chatButton.click(function() {
                 var selectedChatterId = $("#chatters").val();
@@ -165,6 +274,7 @@
                 }
 
                 remoteChatter = selectedChatterId;
+                isInitiator = true;
                 sendChatInvitation();
             });
 
@@ -173,29 +283,7 @@
                 remoteChatter = undefined;
             });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            /*************************************************************************************/
 
             $("#privateSendButton").click(function() {
                 var selectedChatterId = $("#chatters").val();
