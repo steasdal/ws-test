@@ -27,6 +27,8 @@
             var chatButton = $("#rtcChatButton");
             var hangupButton = $("#rtcHangupButton");
 
+            var rtcConfiguration = {'iceServers': [{'url': 'stun:stun.l.google.com:19302'}]};
+
             var localStream, remoteStream, rtcPeerConnection;
             var isInitiator = false;
             var isStarted = false;
@@ -74,10 +76,9 @@
                     });
                 });
 
+                // Subscribe to my own private channel for WebRTC messages
                 rtcMessageSubscription = client.subscribe("/topic/rtcMessage/" + chatId, function(rawMessage) {
                     var messageBody = JSON.parse(rawMessage.body);
-
-                    console.log("message type: " + messageBody.type);
 
                     switch(messageBody.type) {
                         case "chat-offer":               // A chat offer has been received from some chat participant - prepare to chat!
@@ -98,39 +99,34 @@
                             break;
                         case "disconnect-offer":         // You've received a disconnect offer from your chat participant - prepare to disconnect
                             acknowledgeChatHangup();
+                            endChat();
                             cleanupAfterVideoChat();
                             remoteChatter = undefined;
                             console.log("Disconnecting from chat with " + messageBody.sender);
                             break;
                         case "disconnect-acknowledged":  // You've sent a disconnect offer to your chat participant and received this acknowledgement - disconnect complete
+                            endChat();
                             cleanupAfterVideoChat();
                             console.log("Disconnected from chat with " + messageBody.sender);
                             break;
-
-
-                        case "offer":
-                            console.log("offer received");
+                        case "offer":                    // Your chat partner has sent you an offer (an RTC Session Description)
+                            console.log("offer received from " + remoteChatter);
                             rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(messageBody));
                             doAnswer();
                             break;
-
-                        case "answer":
-                            console.log("answer received");
+                        case "answer":                   // Your chat partner has responded to your offer with an answer (also an RTC Session Description)
+                            console.log("answer received from " + remoteChatter);
                             rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(messageBody));
                             break;
-
-                        case "candidate":
-                            console.log("ice candidate received");
+                        case "candidate":                // Your chat partner has sent you one of presumably many ICE candidates
+                            console.log("ice candidate received from " + remoteChatter);
                             var candidate = new RTCIceCandidate({sdpMLineIndex:messageBody.label, candidate:messageBody.candidate});
                             rtcPeerConnection.addIceCandidate(candidate);
                             break;
 
-
                         default:
                             console.log("Unknown message type: ", messageBody.type);
                     }
-
-
                 });
 
                 startLocalVideo();
@@ -186,7 +182,7 @@
                 console.log('navigator.getUserMedia error: ', error);
             }
 
-            var constraints = {video: true};
+            var constraints = {video: true, audio:true};
 
             function startLocalVideo() {
                 console.log('Getting user media with constraints', constraints);
@@ -194,9 +190,6 @@
             }
 
             function startChat() {
-                console.log( isStarted ? "started" : "not started" );
-                console.log( localStream ? "stream good" : "stream bad" );
-
                 if (!isStarted && localStream) {
                     createPeerConnection();
                     rtcPeerConnection.addStream(localStream);
@@ -207,9 +200,18 @@
                 }
             }
 
+            function endChat() {
+                if(isStarted) {
+                    isStarted = false;
+                    rtcPeerConnection.close();
+                    rtcPeerConnection = null;
+                    remoteStream = null;
+                }
+            }
+
             function createPeerConnection() {
                 try {
-                    rtcPeerConnection = new RTCPeerConnection(null);
+                    rtcPeerConnection = new RTCPeerConnection(rtcConfiguration);
                     rtcPeerConnection.onicecandidate = handleIceCandidate;
                     console.log('Created RTCPeerConnnection');
                 } catch (e) {
@@ -229,6 +231,13 @@
             function doAnswer() {
                 console.log('Sending answer to peer.');
                 rtcPeerConnection.createAnswer(setLocalAndSendMessage, null);
+            }
+
+            function tryHangup() {
+                if(isStarted) {
+                    sendChatHangup();
+                    remoteChatter = undefined;
+                }
             }
 
             function setLocalAndSendMessage(sessionDescription) {
@@ -279,8 +288,7 @@
             });
 
             hangupButton.click(function() {
-                sendChatHangup();
-                remoteChatter = undefined;
+                tryHangup();
             });
 
             /*************************************************************************************/
@@ -306,9 +314,14 @@
 
             // Exit neatly on window unload
             $(window).on('beforeunload', function(){
+                // Perchance we happen to be in a video chat, hang up.
+                tryHangup();
+
+                // Unsubscribe from all channels
                 privateSubscription.unsubscribe();
                 publicSubscription.unsubscribe();
                 registrationSubscription.unsubscribe();
+                rtcMessageSubscription.unsubscribe();
 
                 // Tell all chat participants that we're leaving
                 var json = "{ \"senderId\": \"" + chatId +  "\", \"message\": \"-- leaving the chat --\" }";
