@@ -174,6 +174,9 @@
 
             function handleUserMedia(stream) {
                 localStream = stream;
+
+                console.log(stream.getVideoTracks()[0]);
+
                 attachMediaStream(localVideo, stream);
                 console.log('Adding local stream.');
             }
@@ -388,7 +391,7 @@
     </div>
 
     <div class="boxed" >
-        <video id="localVideo" class="videoWindow" autoplay></video>
+        <video id="localVideo" class="videoWindow" autoplay muted></video>
         <video id="remoteVideo" class="videoWindow" autoplay></video>
     </div>
 
