@@ -19,7 +19,7 @@
             var socket = new SockJS("${createLink(uri: '/stomp')}");
             var client = Stomp.over(socket);
 
-            var privateSubscription, publicSubscription, registrationSubscription;
+            var privateSubscription, publicSubscription, registrationSubscription, rtcMessageSubscription;
 
             var localVideo = $("#localVideo")[0];
             var remoteVideo = $("#remoteVideo")[0];
@@ -27,14 +27,16 @@
             var chatButton = $("#rtcChatButton");
             var hangupButton = $("#rtcHangupButton");
 
-            var rtcConfiguration = {'iceServers': [{'url': 'stun:stun.l.google.com:19302'}]};
-
             var localStream, remoteStream, rtcPeerConnection;
             var isInitiator = false;
             var isStarted = false;
-            var rtcMessageSubscription;
 
             var remoteChatter = undefined;
+
+            var rtcConstraints = {video: true, audio:true};
+
+            // We'll use Google's unofficial public STUN server (NO TURN support!)
+            var rtcConfiguration = {'iceServers': [{'url': 'stun:stun.l.google.com:19302'}]};
 
             client.connect({}, function() {
 
@@ -185,11 +187,9 @@
                 console.log('navigator.getUserMedia error: ', error);
             }
 
-            var constraints = {video: true, audio:true};
-
             function startLocalVideo() {
-                console.log('Getting user media with constraints', constraints);
-                getUserMedia(constraints, handleUserMedia, handleUserMediaError);
+                console.log('Getting user media with rtcConstraints', rtcConstraints);
+                getUserMedia(rtcConstraints, handleUserMedia, handleUserMediaError);
             }
 
             function startChat() {
