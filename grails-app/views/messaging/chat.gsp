@@ -297,6 +297,31 @@
             /*************************************************************************************/
 
             $("#privateSendButton").click(function() {
+                sendPrivateMessage();
+            });
+
+            $("#publicSendButton").click(function() {
+                sendPublicMessage();
+            });
+
+            $("#privatemessage").keyup(function(e) {
+                if(enterPressed(e)) {
+                    sendPrivateMessage();
+                }
+            });
+
+            $("#publicmessage").keyup(function(e) {
+                if(enterPressed(e)) {
+                    sendPublicMessage();
+                }
+            });
+
+            function enterPressed(e) {
+                var code = (e.keyCode ? e.keyCode : e.which);
+                return code==13;
+            }
+
+            function sendPrivateMessage() {
                 var selectedChatterId = $("#chatters").val();
                 var privateMessage = $("#privatemessage").val();
 
@@ -304,16 +329,18 @@
 
                 // Send the private message to /app/private/{id}
                 client.send("/app/private/" + selectedChatterId, {}, JSON.stringify(json));
-            });
+            }
 
-            $("#publicSendButton").click(function() {
+            function sendPublicMessage() {
                 var publicMessage = $("#publicmessage").val();
 
                 var json = "{ \"senderId\": \"" + chatId +  "\", \"message\": \"" + publicMessage + "\" }";
 
                 // Send the public message to /app/public
                 client.send("/app/public", {}, JSON.stringify(json));
-            });
+            }
+
+            /*************************************************************************************/
 
             // Exit neatly on window unload
             $(window).on('beforeunload', function(){
