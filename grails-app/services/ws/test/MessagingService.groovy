@@ -1,15 +1,18 @@
 package ws.test
 
 import groovy.json.JsonSlurper
+import org.springframework.messaging.Message
 import org.springframework.messaging.handler.annotation.DestinationVariable
 import org.springframework.messaging.handler.annotation.MessageMapping
+import org.springframework.messaging.simp.SimpMessagingTemplate
+import org.springframework.messaging.support.MessageBuilder
 import org.springframework.stereotype.Controller
 
 @Controller
 class MessagingService {
 
     ChatterService chatterService
-    def brokerMessagingTemplate
+    SimpMessagingTemplate brokerMessagingTemplate
 
     /**
      * Register a new chat participant.  This'll create a record for the new
@@ -72,7 +75,10 @@ class MessagingService {
             returnText.append( chatters.collect{ /{ "name":"${it.name}", "chatId":"${it.chatId}" }/ }.join(",") )
             returnText.append( / ] }/ )
 
-            brokerMessagingTemplate.convertAndSend "/topic/registrations", returnText.toString()
+            String destination = "/topic/registrations"
+            Message<byte[]> outgoingMessage = MessageBuilder.withPayload(returnText.toString().getBytes()).build()
+
+            brokerMessagingTemplate.send destination, outgoingMessage
         }
     }
 
@@ -124,5 +130,16 @@ class MessagingService {
 
         // Wrangle the sender name and message into a map
         return [name: senderName, message: message]
+    }
+
+    /**
+     * Forward a WebRtc message to a particular chatter.
+     * @param chatterId The ID of the message's intended recipient
+     * @param message The message to forward to the intended recipient
+     */
+    @MessageMapping("/rtcMessage/{chatterId}")
+    protected void rtcMessage(@DestinationVariable String chatterId, Message message) {
+        String destination = "/topic/rtcMessage/$chatterId"
+        brokerMessagingTemplate.send destination, message
     }
 }

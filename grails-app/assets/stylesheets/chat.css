@@ -9,6 +9,11 @@
     border-width: 1px;
     border-color: lightgrey;
 
-    height: 300px;
+    height: 100px;
     overflow: auto;
+}
+
+.videoWindow {
+    background: #222;
+    width: 33%;
 }
