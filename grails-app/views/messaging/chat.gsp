@@ -41,7 +41,7 @@
             client.connect({}, function() {
 
                 // Register the existence of this new chat client with the server
-                var json = "{\"name\":\"" + name + "\", \"chatId\":\"" + chatId + "\"}";
+                var json = {"name": name, "chatId": chatId};
                 client.send("/app/register", {}, JSON.stringify(json));
 
                 // Subscribe to the public channel at /topic/public
@@ -325,7 +325,7 @@
                 var selectedChatterId = $("#chatters").val();
                 var privateMessage = $("#privatemessage").val();
 
-                var json = "{ \"senderId\": \"" + chatId +  "\", \"message\": \"" + privateMessage + "\" }";
+                var json = {"senderId": chatId, "message": privateMessage};
 
                 // Send the private message to /app/private/{id}
                 client.send("/app/private/" + selectedChatterId, {}, JSON.stringify(json));
@@ -334,7 +334,7 @@
             function sendPublicMessage() {
                 var publicMessage = $("#publicmessage").val();
 
-                var json = "{ \"senderId\": \"" + chatId +  "\", \"message\": \"" + publicMessage + "\" }";
+                var json = {"senderId": chatId, "message": publicMessage};
 
                 // Send the public message to /app/public
                 client.send("/app/public", {}, JSON.stringify(json));
@@ -354,11 +354,11 @@
                 rtcMessageSubscription.unsubscribe();
 
                 // Tell all chat participants that we're leaving
-                var json = "{ \"senderId\": \"" + chatId +  "\", \"message\": \"-- leaving the chat --\" }";
+                var json = {"senderId": chatId, "message": "-- leaving the chat --"};
                 client.send("/app/public", {}, JSON.stringify(json));
 
                 // Delete this chatter from the Chatter table
-                json = "{ \"chatId\": \"" + chatId + "\" }";
+                json = {"chatId": chatId};
                 client.send("/app/unregister", {}, JSON.stringify(json));
 
                 // Disconnect the websocket connection
