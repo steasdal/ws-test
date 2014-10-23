@@ -1,5 +1,6 @@
 package ws.test
 
+import org.springframework.messaging.Message
 import org.springframework.messaging.handler.annotation.DestinationVariable
 import org.springframework.messaging.handler.annotation.MessageMapping
 import org.springframework.messaging.simp.SimpMessagingTemplate
@@ -106,11 +107,11 @@ class MessagingService {
     /**
      * Forward a WebRtc message to a particular chatter.
      * @param chatterId The ID of the message's intended recipient
-     * @param rtcMessage The RtcMessage to forward to the intended recipient
+     * @param message The message to forward to the intended recipient
      */
     @MessageMapping("/rtcMessage/{chatterId}")
-    protected void rtcMessage(@DestinationVariable String chatterId, RtcMessage rtcMessage) {
+    protected void rtcMessage(@DestinationVariable String chatterId, Message message) {
         String destination = "/topic/rtcMessage/$chatterId"
-        brokerMessagingTemplate.convertAndSend destination, rtcMessage
+        brokerMessagingTemplate.send destination, message
     }
 }
