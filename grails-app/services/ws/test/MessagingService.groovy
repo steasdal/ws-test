@@ -1,11 +1,8 @@
 package ws.test
 
-import groovy.json.JsonSlurper
-import org.springframework.messaging.Message
 import org.springframework.messaging.handler.annotation.DestinationVariable
 import org.springframework.messaging.handler.annotation.MessageMapping
 import org.springframework.messaging.simp.SimpMessagingTemplate
-import org.springframework.messaging.support.MessageBuilder
 import org.springframework.stereotype.Controller
 
 @Controller
@@ -18,20 +15,12 @@ class MessagingService {
      * Register a new chat participant.  This'll create a record for the new
      * chatter in the Chatters table.
      *
-     * @param registrationMessage a chunk of JSON in the following format:
-     *     { name:<chatter name>, chatId:<chatter id> }
+     * @param registrationMessage a RegistrationMessage
      */
     @MessageMapping("/register")
-    protected void register(String registrationMessage) {
-
-        JsonSlurper slurper = new JsonSlurper()
-        def json = slurper.parseText(registrationMessage)
-
-        def name = json.name
-        def chatId = json.chatId
-
+    protected void register(RegistrationMessage registrationMessage) {
         try {
-            Chatter chatter = chatterService.newChatter(name, chatId)
+            Chatter chatter = chatterService.newChatter(registrationMessage.name, registrationMessage.chatId)
         } catch (Exception exception) {
             System.out.println exception.getMessage()
         }
@@ -43,19 +32,12 @@ class MessagingService {
      * Unregister an existing chat participant.  This'll delete a chatter's
      * record from the Chatters table.
      *
-     * @param unregistrationMessage a chunk of JSON in the following format:
-     *     { chatId:<chatter id> }
+     * @param unregistrationMessage a RegistrationMessage
      */
     @MessageMapping("/unregister")
-    protected void unregister(String unregistrationMessage) {
-
-        JsonSlurper slurper = new JsonSlurper()
-        def json = slurper.parseText(unregistrationMessage)
-
-        def chatId = json.chatId
-
+    protected void unregister(RegistrationMessage unregistrationMessage) {
         try {
-            chatterService.deleteChatter(chatId)
+            chatterService.deleteChatter(unregistrationMessage.chatId)
         } catch (Exception exception) {
             System.out.println exception.getMessage()
         }
@@ -70,15 +52,12 @@ class MessagingService {
         Collection<Chatter> chatters = chatterService.getAllChatters()
 
         if(chatters.size() > 0) {
-            StringBuffer returnText = new StringBuffer()
-            returnText.append( /{ "chatters": [ / )
-            returnText.append( chatters.collect{ /{ "name":"${it.name}", "chatId":"${it.chatId}" }/ }.join(",") )
-            returnText.append( / ] }/ )
-
+            def payload = [
+                chatters: chatters.collect { [name: it.name, chatId: it.chatId] }
+            ]
             String destination = "/topic/registrations"
-            Message<byte[]> outgoingMessage = MessageBuilder.withPayload(returnText.toString().getBytes()).build()
 
-            brokerMessagingTemplate.send destination, outgoingMessage
+            brokerMessagingTemplate.convertAndSend destination, payload
         }
     }
 
@@ -86,12 +65,11 @@ class MessagingService {
      * Receive a public message and broadcast it to all participants
      * listening on the /public channel
      *
-     * @param jsonMessage will be a chunk of JSON in the following format:
-     *     { senderId: <sender's chat id>, message: <public chat message> }
+     * @param chatMessage a ChatMessage
      */
     @MessageMapping("/public")
-    protected void publicMessage(String jsonMessage) {
-        Map messageMap = parseMessageToMap(jsonMessage)
+    protected void publicMessage(ChatMessage chatMessage) {
+        Map messageMap = parseMessageToMap(chatMessage)
         brokerMessagingTemplate.convertAndSend "/topic/public", messageMap
     }
 
@@ -100,12 +78,11 @@ class MessagingService {
      * private channel.
      *
      * @param chatterId The chat id of the intended recipient of this message
-     * @param jsonMessage a chunk of JSON in the following format:
-     *     { senderId: <sender's chat id>, message: <private chat message> }
+     * @param chatMessage a ChatMessage
      */
     @MessageMapping("/private/{chatterId}")
-    protected void privateMessage(@DestinationVariable String chatterId, String jsonMessage) {
-        Map messageMap = parseMessageToMap(jsonMessage)
+    protected void privateMessage(@DestinationVariable String chatterId, ChatMessage chatMessage) {
+        Map messageMap = parseMessageToMap(chatMessage)
         brokerMessagingTemplate.convertAndSend "/topic/private/$chatterId".toString(), messageMap
     }
 
@@ -114,32 +91,26 @@ class MessagingService {
      * the sender's name in the Chatter table, stuff the sender's name
      * and the chat message into a map and return it.
      *
-     * @param jsonMessage An incoming chat message.
+     * @param chatMessage An incoming chat message.
      *
      * @return A map containing the sender's name and the chat message.
      */
-    private static Map parseMessageToMap(String jsonMessage) {
-        JsonSlurper slurper = new JsonSlurper()
-        def json = slurper.parseText(jsonMessage)
-
-        def senderId = json.senderId
-        def message = json.message
-
+    private static Map parseMessageToMap(ChatMessage chatMessage) {
         // Look up the name of the sender in the Chatter table
-        def senderName = Chatter.findByChatId(senderId)?.name
+        def senderName = Chatter.findByChatId(chatMessage.senderId)?.name
 
         // Wrangle the sender name and message into a map
-        return [name: senderName, message: message]
+        return [name: senderName, message: chatMessage.message]
     }
 
     /**
      * Forward a WebRtc message to a particular chatter.
      * @param chatterId The ID of the message's intended recipient
-     * @param message The message to forward to the intended recipient
+     * @param rtcMessage The RtcMessage to forward to the intended recipient
      */
     @MessageMapping("/rtcMessage/{chatterId}")
-    protected void rtcMessage(@DestinationVariable String chatterId, Message message) {
+    protected void rtcMessage(@DestinationVariable String chatterId, RtcMessage rtcMessage) {
         String destination = "/topic/rtcMessage/$chatterId"
-        brokerMessagingTemplate.send destination, message
+        brokerMessagingTemplate.convertAndSend destination, rtcMessage
     }
 }
